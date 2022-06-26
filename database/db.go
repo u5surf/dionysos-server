@@ -14,9 +14,10 @@ import (
 const (
 	UsersCollection = "users"
 	RoomsCollection = "rooms"
+	EdgeCollection  = "edgeCollection"
 )
 
-// cols is an array of collections
+// cols is an array of the used collections
 var cols = []string{UsersCollection, RoomsCollection}
 
 // GetClient returns a new driver instance for the arango database
@@ -52,7 +53,6 @@ func GetClient() driver.Client {
 		log.Fatalf("Failed to create arango client: %v", err)
 	}
 
-	// time.Sleep(time.Second * 10)
 	// Wait for the database to be ready
 	_, err = client.Version(context.TODO())
 	for err != nil {
@@ -72,21 +72,17 @@ func GetDatabase(name string) (db driver.Database) {
 	// Check if the database exists and create it if it does not
 	dbExists, err := client.DatabaseExists(context.TODO(), name)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf(err.Error())
 	}
 
 	if dbExists {
 		fmt.Printf("%s db already exists\n", name)
-
 		db, err = client.Database(context.TODO(), name)
-
 		if err != nil {
 			log.Fatalf("Failed to open %s database: %v", name, err)
 		}
-
 	} else {
 		db, err = client.CreateDatabase(context.TODO(), name, nil)
-
 		if err != nil {
 			log.Fatalf("Failed to create %s database: %v", name, err)
 		}
@@ -120,4 +116,51 @@ func SetupCollections(db driver.Database, cols []string) {
 			fmt.Printf("Created collection '%s' in database '%s'\n", col.Name(), db.Name())
 		}
 	}
+}
+
+// GetGraph returns a graph instance
+func GetGraph(db driver.Database, graphName string) (graph driver.Graph) {
+
+	graphExists, err := db.GraphExists(context.TODO(), graphName)
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+
+	if graphExists {
+		fmt.Printf("%s graph exists already\n", graphName)
+		graph, err = db.Graph(context.TODO(), graphName)
+		if err != nil {
+			log.Fatalf(err.Error())
+		}
+	} else {
+		graph = SetupGraph(db, graphName, cols)
+	}
+
+	return graph
+}
+
+// SetupGraph creates the edgeDefinition and the corresponding graph
+func SetupGraph(db driver.Database, graphName string, cols []string) driver.Graph {
+
+	var edgeDefinition driver.EdgeDefinition
+
+	edgeDefinition.Collection = EdgeCollection
+
+	// define a set of collections where an edge is going out...
+	edgeDefinition.From = []string{UsersCollection}
+
+	// repeat this for the collections where an edge is going into
+	edgeDefinition.To = cols
+
+	var options driver.CreateGraphOptions
+	options.EdgeDefinitions = []driver.EdgeDefinition{edgeDefinition}
+
+	graph, err := db.CreateGraphV2(context.TODO(), graphName, &options)
+	if err != nil {
+		fmt.Printf("Failed to create graph: %v", err)
+	} else {
+		fmt.Printf("Created graph '%s' in database '%s'\n", graphName, db.Name())
+	}
+
+	return graph
 }

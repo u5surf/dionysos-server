@@ -3,6 +3,10 @@ version: '3.9'
 
 networks:
   dionysos:
+
+volumes:
+  arangodb:
+
 services:
   api:
     container_name: api
@@ -31,3 +35,5 @@ services:
       - dionysos
     environment:
       - ARANGO_ROOT_PASSWORD=${ARANGO_PASSWORD}
+    volumes: 
+      - arangodb:/var/lib/arangodb3

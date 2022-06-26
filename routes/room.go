@@ -3,6 +3,7 @@ package routes
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -13,35 +14,75 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type Connection struct {
+	From string `json:"_from"`
+	To   string `json:"_to"`
+}
+
+type RoomRequest struct {
+	Room    models.Room `json:"room"`
+	OwnerID string      `json:"owner" binding:"required"`
+}
+
 // CreateRoom creates a room in the aganro database
 func CreateRoom(c *gin.Context) {
-	var room models.Room
+	var roomRequest RoomRequest
+	var owner models.User
 
 	ctx, cancelCtx := context.WithTimeout(c, 1000*time.Millisecond)
 	defer cancelCtx()
 
-	if err := c.ShouldBindJSON(&room); err != nil {
+	if err := c.ShouldBindJSON(&roomRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		log.Printf("Failed to bind JSON: %v", err)
 		return
 	}
 
-	col, err := db.Collection(ctx, database.RoomsCollection)
+	// Get Owner
+	col, err := db.Collection(ctx, database.UsersCollection)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Cannot access database collection"})
 		log.Printf("Failed to access collection: %v", err)
 		return
 	}
 
-	meta, err := col.CreateDocument(ctx, room)
-
+	metaOwner, err := col.ReadDocument(ctx, roomRequest.OwnerID, &owner)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Room not created"})
-		log.Printf("Failed to create document: %v", err)
+		c.JSON(http.StatusNotFound, gin.H{"message": "Owner not found"})
+		log.Printf("Failed to find document: %v", err)
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"id": meta.Key})
+	// Create Room
+	col, err = db.Collection(ctx, database.RoomsCollection)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Cannot access database collection"})
+		log.Printf("Failed to access collection: %v", err)
+		return
+	}
+
+	metaRoom, err := col.CreateDocument(ctx, roomRequest.Room)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Room not created"})
+		log.Printf("Failed to create room: %v", err)
+		return
+	}
+
+	// add edge
+	edgeCollection, _, err := graph.EdgeCollection(ctx, database.EdgeCollection)
+	if err != nil {
+		log.Fatalf("Failed to select edge collection: %v", err)
+	}
+
+	edge := Connection{From: string(metaOwner.ID), To: string(metaRoom.ID)}
+	fmt.Println(edge)
+	_, err = edgeCollection.CreateDocument(ctx, edge)
+	if err != nil {
+		log.Fatalf("Failed to create edge document: %v", err)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"id": metaRoom.Key})
 }
 
 // GetRoom returns a room from the aganro database
