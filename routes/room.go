@@ -10,6 +10,7 @@ import (
 
 	"github.com/Brawdunoir/dionysos-server/database"
 	"github.com/Brawdunoir/dionysos-server/models"
+	"github.com/Brawdunoir/dionysos-server/utils"
 	"github.com/arangodb/go-driver"
 	"github.com/gin-gonic/gin"
 )
@@ -61,6 +62,7 @@ func CreateRoom(c *gin.Context) {
 		return
 	}
 
+	roomRequest.Room.Owner = metaOwner.ID
 	metaRoom, err := col.CreateDocument(ctx, roomRequest.Room)
 
 	if err != nil {
@@ -141,13 +143,39 @@ func UpdateRoom(c *gin.Context) {
 		return
 	}
 
-	_, err = col.UpdateDocument(driver.WithReturnNew(ctx, &patchedRoom), id, roomUpdate)
+	connnectedUsers := utils.GetUsersFromRoom(id, db, graph)
+	fmt.Println("Connected users: ", connnectedUsers)
 
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Room not modified"})
-		log.Printf("Failed to modify document: %v", err)
-		return
+	// Check if roomUpdate.Owner is in connnectedUsers
+	found := false
+
+	for _, v := range connnectedUsers {
+		// check if the strings match
+		if string(v) == roomUpdate.Owner {
+			found = true
+			break
+		}
 	}
+
+	if !found {
+		fmt.Println("The slice does not contain", roomUpdate.Owner)
+	} else {
+		_, err = col.UpdateDocument(driver.WithReturnNew(ctx, &patchedRoom), id, roomUpdate)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "Room not modified"})
+			log.Printf("Failed to modify document: %v", err)
+			return
+		}
+	}
+
+	// _, err = col.UpdateDocument(driver.WithReturnNew(ctx, &patchedRoom), id, roomUpdate)
+
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"message": "Room not modified"})
+	// 	log.Printf("Failed to modify document: %v", err)
+	// 	return
+	// }
 
 	c.JSON(http.StatusOK, gin.H{"room": patchedRoom})
 }
