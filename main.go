@@ -17,6 +17,7 @@ func main() {
 	router.DELETE("/users/:id", routes.DeleteUser)
 
 	router.POST("/rooms/", routes.CreateRoom)
+	router.POST("/rooms/:id", routes.ConnectUserToRoom)
 	router.GET("/rooms/:id", routes.GetRoom)
 	router.PATCH("/rooms/:id", routes.UpdateRoom)
 	router.DELETE("/rooms/:id", routes.DeleteRoom)

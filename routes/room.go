@@ -25,6 +25,10 @@ type RoomRequest struct {
 	OwnerID string      `json:"owner" binding:"required"`
 }
 
+type ConnectUserRequest struct {
+	UserID string `json:"user" binding:"required"`
+}
+
 // CreateRoom creates a room in the aganro database
 func CreateRoom(c *gin.Context) {
 	var roomRequest RoomRequest
@@ -158,24 +162,18 @@ func UpdateRoom(c *gin.Context) {
 	}
 
 	if !found {
-		fmt.Println("The slice does not contain", roomUpdate.Owner)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Room not modified"})
+		log.Printf("Failed to modify room: %v, new owner %s doesn't seem to be connected", err, roomUpdate.Owner)
+		return
 	} else {
 		_, err = col.UpdateDocument(driver.WithReturnNew(ctx, &patchedRoom), id, roomUpdate)
 
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Room not modified"})
-			log.Printf("Failed to modify document: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Room not modified"})
+			log.Printf("Failed to modify room: %v", err)
 			return
 		}
 	}
-
-	// _, err = col.UpdateDocument(driver.WithReturnNew(ctx, &patchedRoom), id, roomUpdate)
-
-	// if err != nil {
-	// 	c.JSON(http.StatusInternalServerError, gin.H{"message": "Room not modified"})
-	// 	log.Printf("Failed to modify document: %v", err)
-	// 	return
-	// }
 
 	c.JSON(http.StatusOK, gin.H{"room": patchedRoom})
 }
@@ -203,4 +201,65 @@ func DeleteRoom(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, nil)
+}
+
+// ConnectUserToRoom creates a room in the aganro database
+func ConnectUserToRoom(c *gin.Context) {
+	var userRequest ConnectUserRequest
+	var user models.User
+	var room models.Room
+
+	ctx, cancelCtx := context.WithTimeout(c, 1000*time.Millisecond)
+	defer cancelCtx()
+
+	if err := c.ShouldBindJSON(&userRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		log.Printf("Failed to bind JSON: %v", err)
+		return
+	}
+
+	id := c.Param("id")
+
+	colRooms, err := db.Collection(ctx, database.RoomsCollection)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot access database collection"})
+		log.Printf("Failed to access collection: %v", err)
+		return
+	}
+
+	metaRoom, err := colRooms.ReadDocument(ctx, id, &room)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
+		log.Printf("Failed to get document: %v", err)
+		return
+	}
+
+	colUsers, err := db.Collection(ctx, database.UsersCollection)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot access database collection"})
+		log.Printf("Failed to access collection: %v", err)
+		return
+	}
+	metaUser, err := colUsers.ReadDocument(ctx, userRequest.UserID, &user)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		log.Printf("Failed to find document: %v", err)
+		return
+	}
+
+	// add edge
+	edgeCollection, _, err := graph.EdgeCollection(ctx, database.EdgeCollection)
+	if err != nil {
+		log.Fatalf("Failed to select edge collection: %v", err)
+	}
+
+	edge := Connection{From: string(metaUser.ID), To: string(metaRoom.ID)}
+	fmt.Println(edge)
+	_, err = edgeCollection.CreateDocument(ctx, edge)
+	if err != nil {
+		log.Fatalf("Failed to create edge document: %v", err)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"id": metaUser.ID})
 }
