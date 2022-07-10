@@ -147,19 +147,7 @@ func UpdateRoom(c *gin.Context) {
 		return
 	}
 
-	connnectedUsers := utils.GetUsersFromRoom(id, db, graph)
-	fmt.Println("Connected users: ", connnectedUsers)
-
-	// Check if roomUpdate.Owner is in connnectedUsers
-	found := false
-
-	for _, v := range connnectedUsers {
-		// check if the strings match
-		if string(v) == roomUpdate.Owner {
-			found = true
-			break
-		}
-	}
+	found := utils.IsUserConnectedToRoom(id, roomUpdate.Owner, db, graph)
 
 	if !found {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Room not modified"})
